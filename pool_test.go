@@ -9,13 +9,13 @@ import (
 )
 
 var (
-	pool      *Pool
+	_testPool      *Pool
 	maxIdle   = int32(16)
 	maxActive = int32(1024)
 )
 
 func TestNewPool(t *testing.T) {
-	pool = NewPool(func() (redis.Conn, error) {
+	_testPool = NewPool(func() (redis.Conn, error) {
 		c, err := redis.Dial("tcp", "127.0.0.1:6379")
 		if err != nil {
 			t.Fatal(err)
@@ -24,7 +24,7 @@ func TestNewPool(t *testing.T) {
 	},
 		maxIdle,
 		maxActive)
-	if err := pool.TestConn(); err != nil {
+	if err := _testPool.TestConn(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -33,18 +33,18 @@ func TestPoolGet(t *testing.T) {
 	ch := make([]*RedisConn, 1024)
 	var err error
 	for i := 0; i < 1024; i++ {
-		ch[i] = pool.Get()
+		ch[i] = _testPool.Get()
 		if ch[i].Err() != nil {
 			t.Fatal(err)
 		}
 	}
 	for i := 0; i < 1024; i++ {
-		pool.Put(ch[i])
+		_testPool.Put(ch[i])
 	}
 }
 
 func TestPoolDo(t *testing.T) {
-	reply, err := pool.Do("SET", "test", "test")
+	reply, err := _testPool.Do("SET", "test", "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestPoolDo(t *testing.T) {
 	} else if reply.(string) != "OK" {
 		t.Fatal("reply wrong|reply=", reply)
 	}
-	reply, err = pool.Do("GET", "test")
+	reply, err = _testPool.Do("GET", "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,14 +62,14 @@ func TestPoolDo(t *testing.T) {
 	} else if string(reply.([]uint8)) != "test" {
 		t.Fatal("reply wrong|reply=", reply)
 	}
-	pool.Do("DEL", "test")
+	_testPool.Do("DEL", "test")
 }
 
 func TestPoolTimerEvent(t *testing.T) {
-	pool.Close()
+	_testPool.Close()
 	maxIdle = int32(3)
 	maxActive = int32(8)
-	pool = NewPool(func() (redis.Conn, error) {
+	_testPool = NewPool(func() (redis.Conn, error) {
 		c, err := redis.Dial("tcp", "192.168.1.202:6379")
 		if err != nil {
 			t.Fatal(err)
@@ -78,57 +78,57 @@ func TestPoolTimerEvent(t *testing.T) {
 	},
 		maxIdle,
 		maxActive)
-	pool.SetLifeTime(0)
+	_testPool.SetLifeTime(0)
 	elems := make([]*RedisConn, maxActive)
 	for i := 0; i < int(maxActive); i++ {
-		elems[i] = pool.Get()
+		elems[i] = _testPool.Get()
 		if elems[i].Err() != nil {
 			t.Fatal(elems[i].Err())
 		}
 	}
-	if pool.curActive != maxActive {
-		t.Fatal("size wrong|curActive=", pool.curActive, "|maxActive=", maxActive)
+	if _testPool.curActive != maxActive {
+		t.Fatal("size wrong|curActive=", _testPool.curActive, "|maxActive=", maxActive)
 	}
 	for i := 0; i < int(maxActive); i++ {
 		elems[i].Close()
 	}
-	if pool.elemsSize != maxActive {
-		t.Fatal("size wrong|elemsSize=", pool.elemsSize, "|maxActive=", maxActive)
+	if _testPool.elemsSize != maxActive {
+		t.Fatal("size wrong|elemsSize=", _testPool.elemsSize, "|maxActive=", maxActive)
 	}
 	time.AfterFunc(time.Second*3, func() {
-		if pool.elemsSize != maxActive-3 || pool.curActive != maxActive-3 {
-			t.Fatal("elemsSize=", pool.elemsSize, "|curActive=", pool.curActive)
+		if _testPool.elemsSize != maxActive-3 || _testPool.curActive != maxActive-3 {
+			t.Fatal("elemsSize=", _testPool.elemsSize, "|curActive=", _testPool.curActive)
 		}
 	})
 	time.Sleep(time.Second * 4)
 }
 
 func TestPoolWait(t *testing.T) {
-	pool.Update(1, 1)
-	pool.SetWaitTime(1)
+	_testPool.Update(1, 1)
+	_testPool.SetWaitTime(1)
 	{
-		conn := pool.Get()
+		conn := _testPool.Get()
 		if conn.Err() != nil {
 			t.Error(conn.Err())
 		}
 		time.AfterFunc(time.Millisecond*900, func() { conn.Close() })
 	}
 	{
-		conn := pool.Get()
+		conn := _testPool.Get()
 		if conn.Err() != nil {
 			t.Error(conn.Err())
 		}
 		conn.Close()
 	}
 	{
-		conn := pool.Get()
+		conn := _testPool.Get()
 		if conn.Err() != nil {
 			t.Error(conn.Err())
 		}
 		time.AfterFunc(time.Millisecond*1100, func() { conn.Close() })
 	}
 	{
-		conn := pool.Get()
+		conn := _testPool.Get()
 		defer conn.Close()
 		if conn.Err() == nil {
 			t.Error("failed")
@@ -137,7 +137,7 @@ func TestPoolWait(t *testing.T) {
 }
 
 func TestPoolSend(t *testing.T) {
-	conn := pool.Get()
+	conn := _testPool.Get()
 	defer conn.Close()
 	{
 		if err := conn.Send("SET", "SEND", "test"); err != nil {
