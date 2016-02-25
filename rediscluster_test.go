@@ -40,7 +40,7 @@ func TestClusterDo(t *testing.T) {
 }
 
 func TestClusterGetHandle(t *testing.T) {
-	rh := _testCluster.HandleForKey("CLUSTER")
+	rh := _testCluster.GetHandle("CLUSTER")
 	if rh == nil {
 		t.Fatal("rh is nil")
 	}
