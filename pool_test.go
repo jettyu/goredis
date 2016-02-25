@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	_testPool      *Pool
+	_testPool *Pool
 	maxIdle   = int32(16)
 	maxActive = int32(1024)
 )
@@ -181,5 +181,46 @@ func TestPoolSend(t *testing.T) {
 		if rp.(int64) != 1 {
 			t.Error(rp)
 		}
+	}
+}
+
+func BenchmarkPoolDo(b *testing.B) {
+	_testPool.Update(100, 10000)
+	key := "testbenchmark"
+	if _, err := _testPool.Do("SET", key, "1"); err != nil {
+		b.Fatal(err)
+	}
+	failedNum := 0
+	for i := 0; i < b.N; i++ {
+		if _, err := _testPool.Do("GET", key); err != nil {
+			failedNum++
+		}
+	}
+	if _, err := _testPool.Do("DEL", key); err != nil {
+		b.Fatal(err)
+	}
+	if failedNum != 0 {
+		b.Error("failedNum=", failedNum)
+	}
+}
+
+func BenchmarkRedis(b *testing.B) {
+	conn := _testPool.Get()
+	defer conn.Close()
+	key := "testbenchmark"
+	if _, err := conn.Do("SET", key, "1"); err != nil {
+		b.Fatal(err)
+	}
+	failedNum := 0
+	for i := 0; i < b.N; i++ {
+		if _, err := conn.Do("GET", key); err != nil {
+			failedNum++
+		}
+	}
+	if _, err := conn.Do("DEL", key); err != nil {
+		b.Fatal(err)
+	}
+	if failedNum != 0 {
+		b.Error("failedNum=", failedNum)
 	}
 }
