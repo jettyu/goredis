@@ -204,7 +204,7 @@ func BenchmarkPoolDo(b *testing.B) {
 	}
 }
 
-func BenchmarkRedis(b *testing.B) {
+func BenchmarkConnDo(b *testing.B) {
 	conn := _testPool.Get()
 	defer conn.Close()
 	key := "testbenchmark"
