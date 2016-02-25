@@ -9,21 +9,18 @@ import (
 )
 
 var (
-	_testPool *Pool
+	_testPool *Pool = NewPool(func() (redis.Conn, error) {
+		c, err := redis.Dial("tcp", "127.0.0.1:6379")
+		return c, err
+	},
+		maxIdle,
+		maxActive)
+
 	maxIdle   = int32(16)
 	maxActive = int32(1024)
 )
 
 func TestNewPool(t *testing.T) {
-	_testPool = NewPool(func() (redis.Conn, error) {
-		c, err := redis.Dial("tcp", "127.0.0.1:6379")
-		if err != nil {
-			t.Fatal(err)
-		}
-		return c, err
-	},
-		maxIdle,
-		maxActive)
 	if err := _testPool.TestConn(); err != nil {
 		t.Fatal(err)
 	}
