@@ -2,9 +2,11 @@ package goredis
 
 import (
 	"fmt"
-	"github.com/garyburd/redigo/redis"
+	"log"
 	"sync/atomic"
 	"time"
+
+	"github.com/garyburd/redigo/redis"
 )
 
 var (
@@ -165,7 +167,7 @@ func (this *Pool) get() *RedisConn {
 			}
 			atomic.AddInt32(&this.curActive, 1)
 		} else {
-			fmt.Println("[Warn] 0001 : too many active conn, maxActive=", this.maxActive)
+			log.Println("[Warn] 0001 : too many active conn, maxActive=", this.maxActive)
 			if this.waitTime != 0 {
 				select {
 				case conn = <-this.elems:

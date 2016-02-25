@@ -1,10 +1,11 @@
 package goredis
 
 import (
-	"github.com/garyburd/redigo/redis"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/garyburd/redigo/redis"
 )
 
 var (
@@ -128,10 +129,10 @@ func TestPoolWait(t *testing.T) {
 	}
 	{
 		conn := pool.Get()
+		defer conn.Close()
 		if conn.Err() == nil {
 			t.Error("failed")
 		}
-		conn.Close()
 	}
 }
 
