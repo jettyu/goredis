@@ -41,7 +41,12 @@ func NewRedisCluster(addrs []string, max_idle, max_active int, debug bool) Redis
 	}
 
 	for addr, _ := range cluster.SeedHosts {
-		node := cluster.addRedisHandleIfNeeded(addr)
+		node, ok := cluster.Handles[addr]
+		if !ok {
+			node = NewRedisHandle(addr, cluster.MaxIdle, cluster.MaxActive, cluster.Debug)
+			cluster.Handles[addr] = node
+		}
+
 		cluster_enabled := cluster.hasClusterEnabled(node)
 		if cluster_enabled == false {
 			if len(cluster.SeedHosts) == 1 {
@@ -120,11 +125,30 @@ func (self *RedisCluster) populateSlotsCache() {
 	if self.Debug {
 		fmt.Println("[RedisCluster], PID", os.Getpid(), "[PopulateSlots Running]")
 	}
+	seedHosts := make(map[string]bool)
+	handles := make(map[string]*RedisHandle)
+	slotsMap := make(map[uint16]string)
+	for k, v := range self.SeedHosts {
+		seedHosts[k] = v
+	}
+	for k, v := range self.Handles {
+		handles[k] = v
+	}
+	for k, v := range self.Slots {
+		slotsMap[k] = v
+	}
 	for name, _ := range self.SeedHosts {
 		if self.Debug {
 			fmt.Println("[RedisCluster] [PopulateSlots] Checking: ", name)
 		}
-		node := self.addRedisHandleIfNeeded(name)
+		var (
+			node *RedisHandle
+			ok   bool
+		)
+		if node, ok = handles[name]; !ok {
+			node = NewRedisHandle(name, self.MaxIdle, self.MaxActive, self.Debug)
+			handles[name] = node
+		}
 		cluster_info, err := node.Do("CLUSTER", "NODES")
 		if err == nil {
 			lines := strings.Split(string(cluster_info.([]uint8)), "\n")
@@ -136,12 +160,12 @@ func (self *RedisCluster) populateSlotsCache() {
 						addr = name
 					}
 					// add to seedlist if not in cluster
-					_, seedlist_exists := self.SeedHosts[addr]
-					if !seedlist_exists {
-						self.SeedHosts[addr] = true
-					}
+					seedHosts[addr] = true
+
 					// add to handles if not in handles
-					self.addRedisHandleIfNeeded(name)
+					if _, ok := handles[name]; !ok {
+						handles[name] = NewRedisHandle(addr, self.MaxIdle, self.MaxActive, self.Debug)
+					}
 
 					slots := fields[8:len(fields)]
 					for _, s_range := range slots {
@@ -154,7 +178,7 @@ func (self *RedisCluster) populateSlotsCache() {
 							min, _ := strconv.Atoi(r_pieces[0])
 							max, _ := strconv.Atoi(r_pieces[1])
 							for i := min; i <= max; i++ {
-								self.Slots[uint16(i)] = addr
+								slotsMap[uint16(i)] = addr
 							}
 						}
 					}
@@ -162,13 +186,16 @@ func (self *RedisCluster) populateSlotsCache() {
 			}
 			if self.Debug {
 				fmt.Println("[RedisCluster] [Initializing] DONE, ",
-					"Slots: ", len(self.Slots),
-					"Handles So Far:", len(self.Handles),
-					"SeedList:", len(self.SeedHosts))
+					"Slots: ", len(slotsMap),
+					"Handles So Far:", len(handles),
+					"SeedList:", len(seedHosts))
 			}
 			break
 		}
 	}
+	self.SeedHosts = seedHosts
+	self.Handles = handles
+	self.Slots = slotsMap
 	self.switchToSingleModeIfNeeded()
 }
 
@@ -186,14 +213,6 @@ func (self *RedisCluster) switchToSingleModeIfNeeded() {
 			}
 		}
 	}
-}
-
-func (self *RedisCluster) addRedisHandleIfNeeded(addr string) *RedisHandle {
-	_, handle_exists := self.Handles[addr]
-	if !handle_exists {
-		self.Handles[addr] = NewRedisHandle(addr, self.MaxIdle, self.MaxActive, self.Debug)
-	}
-	return self.Handles[addr]
 }
 
 func (self *RedisCluster) KeyForRequest(cmd string, args ...interface{}) string {
@@ -263,7 +282,12 @@ func (self *RedisCluster) RedisHandleForSlot(slot uint16) *RedisHandle {
 		return r
 	} else {
 		r = NewRedisHandle(node, self.MaxIdle, self.MaxActive, self.Debug)
-		self.Handles[node] = r
+		handles := make(map[string]*RedisHandle)
+		for k, v := range self.Handles {
+			handles[k] = v
+		}
+		handles[node] = r
+		self.Handles = handles
 	}
 	// XXX consider returning random if failure
 	return r
@@ -277,10 +301,8 @@ func (self *RedisCluster) disconnectAll() {
 	for _, handle := range self.Handles {
 		handle.Pool.Close()
 	}
-	// nuke handles
-	for addr, _ := range self.SeedHosts {
-		delete(self.Handles, addr)
-	}
+	self.Handles = make(map[string]*RedisHandle)
+
 	// nuke slots
 	self.Slots = make(map[uint16]string)
 }
@@ -401,7 +423,12 @@ func (self *RedisCluster) SendClusterCommand(cmd string, args ...interface{}) (r
 				SetRefreshNeeded()
 				newslot, _ := strconv.Atoi(errv[1])
 				newaddr := errv[2]
-				self.Slots[uint16(newslot)] = newaddr
+				slotsMap := make(map[uint16]string)
+				for k, v := range self.Slots {
+					slotsMap[k] = v
+				}
+				slotsMap[uint16(newslot)] = newaddr
+				self.Slots = slotsMap
 				if self.Debug {
 					fmt.Println("[RedisCluster] MOVED newaddr: ", newaddr, "new slot: ", newslot, "my slots len: ", len(self.Slots))
 				}
